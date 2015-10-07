@@ -9,6 +9,8 @@
 
 #include "sopipe.h"
 
+#define BUFFER 1024
+
 MODULE_LICENSE("GPL");
 
 static struct cdev dev;
@@ -32,6 +34,13 @@ static __init int sopipe_init(void)
   dev.ops = &sopipe_fops;
   
   // Inicializo semáforo, spinlock y buffer
+	spin_lock_init(&data_lock);
+	sema_init(&sem, 1);
+	if (!(data = kmalloc(BUFFER, GFP_KERNEL))){
+		printk(KERN_ALERT "SOPIPE initialization kmalloc failed\n");
+		goto out_nomem:
+	}
+  
 
   /* dynamically get a MAJOR and MINOR */
   err = alloc_chrdev_region(&devno, 0, 1, "sopipe");
@@ -53,6 +62,8 @@ out_noadd:
   unregister_chrdev_region(devno, 1);
 out_noregion:
   // Si algo salió mal, devuelvo la memoria que me dieron
+	kfree(data);
+out_nomem:
   return -EIO;
 }
 

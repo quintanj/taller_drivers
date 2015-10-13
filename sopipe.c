@@ -40,6 +40,7 @@ static __init int sopipe_init(void)
 		printk(KERN_ALERT "SOPIPE initialization kmalloc failed\n");
 		goto out_nomem:
 	}
+	data_size=BUFFER;
   
 
   /* dynamically get a MAJOR and MINOR */
@@ -85,6 +86,7 @@ static int __sopipe_read(unsigned char * c) {
 // Asume que tenemos el lock tomado
 static int __sopipe_write(unsigned char c) {
   unsigned char * temp = NULL;
+	unsigned int new_data_size;
   if(writeptr < data_size) {
     // Tengo lugar en el buffer. Simplemente escribo
     data[writeptr++] = c;
@@ -96,6 +98,18 @@ static int __sopipe_write(unsigned char c) {
   // 3) Libero el buffer viejo
   // 4) Seteo el nuevo buffer como buffer del módulo
   // Una vez que tengo todo OK => Escribo en el nuevo buffer
+
+	new_data_size = data_size < 1; // Times two
+	if (!(temp = kmalloc(new_data_size, GFP_KERNEL))){
+		printk(KERN_ALERT "__SOPIPE_WRITE Could not get %d bytes for new buffer - kmalloc failed\n", new_data_size);
+		// Could happen
+		goto out_noadd:
+	}
+	memcpy(temp, data, data_size);
+	kfree(data);
+	data_size=new_data_size;
+	data=temp;
+
   data[writeptr++] = c;
   return 0;
 }
@@ -105,6 +119,7 @@ static __exit void sopipe_exit(void)
   cdev_del(&dev);
   unregister_chrdev_region(devno, 1);
   // Libero la memoria del módulo
+	kfree(data);
 }
 
 int sopipe_open(struct inode * inode, struct file * filp)

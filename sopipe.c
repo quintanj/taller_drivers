@@ -35,10 +35,10 @@ static __init int sopipe_init(void)
   
   // Inicializo semáforo, spinlock y buffer
 	spin_lock_init(&data_lock);
-	sema_init(&sem, 1);
+	sema_init(&sem, 0);
 	if (!(data = kmalloc(BUFFER, GFP_KERNEL))){
 		printk(KERN_ALERT "SOPIPE initialization kmalloc failed\n");
-		goto out_nomem:
+		goto out_nomem;
 	}
 	data_size=BUFFER;
   
@@ -103,7 +103,7 @@ static int __sopipe_write(unsigned char c) {
 	if (!(temp = kmalloc(new_data_size, GFP_KERNEL))){
 		printk(KERN_ALERT "__SOPIPE_WRITE Could not get %d bytes for new buffer - kmalloc failed\n", new_data_size);
 		// Could happen
-		goto out_noadd:
+		goto out_noadd;
 	}
 	memcpy(temp, data, data_size);
 	kfree(data);
@@ -112,6 +112,12 @@ static int __sopipe_write(unsigned char c) {
 
   data[writeptr++] = c;
   return 0;
+
+out_noadd:
+  unregister_chrdev_region(devno, 1);
+  // Si algo salió mal, devuelvo la memoria que me dieron
+	kfree(data);
+  return -EIO;
 }
 
 static __exit void sopipe_exit(void)
@@ -135,11 +141,27 @@ int sopipe_release(struct inode * inode, struct file * filp)
 ssize_t sopipe_read(struct file * filp, char __user *buff, size_t count, loff_t * offp)
 {
   // Implementar
+	char c;
+	// down(&sem); // Sin down_interruptible la lectura se bloquea y solo puede matarse desde afuera con kill -9, no responde a ^C
+	down_interruptible(&sem);
+	
+	spin_lock(&data_lock);
+		__sopipe_read(&c);
+	spin_unlock(&data_lock);
+	copy_to_user(buff, &c, 1);
+	return 1;
 }
 
 ssize_t sopipe_write(struct file * filp, const char __user *buff, size_t count, loff_t * offp)
 {
   // Implementar
+	char c;
+	copy_from_user(&c, buff, 1);
+	spin_lock(&data_lock);
+		__sopipe_write(c);
+	spin_unlock(&data_lock);
+	up(&sem);
+	return 1;
 }
 
 module_init(sopipe_init);
